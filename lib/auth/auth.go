@@ -24,13 +24,26 @@ type InMemoryServer struct {
 
 	nextUser UserID
 	nextRole RoleID
-
-	tokenQueue []*Token // for pruning expired tokens
 }
 
 var (
 	ErrInternal = errors.New("internal server error")
 )
+
+func NewInMemoryServer(config InMemoryServerConfig) *InMemoryServer {
+	svr := InMemoryServer{
+		cfg:      config,
+		users:    make(map[UserID]*User),
+		uname:    make(map[string]*User),
+		roles:    make(map[RoleID]*Role),
+		rname:    make(map[string]*Role),
+		tokens:   make(map[TokenValue]*Token),
+		nextUser: 1,
+		nextRole: 1,
+	}
+	// TODO: if cfg.PruneInterval > 0 ...
+	return &svr
+}
 
 func (s *InMemoryServer) CreateUser(name, password string) (UserID, error) {
 	if _, exists := s.uname[name]; exists {
@@ -152,12 +165,13 @@ func (s *InMemoryServer) newToken(u *User) (*Token, error) {
 	if err != nil {
 		return nil, err
 	}
-	t := time.Now()
-	return &Token{
+	now := time.Now()
+	t := Token{
 		Value:   TokenValue(base64.StdEncoding.EncodeToString(b)),
 		User:    u.ID,
-		Expires: t.Add(time.Duration(s.cfg.PruneInterval) * time.Second),
-	}, nil
+		Expires: now.Add(time.Duration(s.cfg.PruneInterval) * time.Second),
+	}
+	return &t, nil
 }
 
 func (s *InMemoryServer) verifyToken(t TokenValue) (*User, error) {
