@@ -168,6 +168,7 @@ func (s *InMemoryServer) AddRoleToUser(user UserID, role RoleID) error {
 //
 // Returns: the token string
 // Errors: ErrInvalidAuth, ErrInternal
+// TODO: use old token instead of username/password to renew authentication
 func (s *InMemoryServer) Authenticate(username, password string) (TokenValue, error) {
 	userObj, ok := s.uname[username]
 	if !ok {
