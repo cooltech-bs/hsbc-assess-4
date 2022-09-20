@@ -13,6 +13,11 @@ type Token struct {
 	Expires time.Time
 }
 
+type TokenQueue struct {
+	ServerEpoch int32
+	Tokens      []*Token
+}
+
 var (
 	ErrInvalidToken = errors.New("invalid auth token")
 )

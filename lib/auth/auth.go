@@ -14,6 +14,7 @@ type InMemoryServerConfig struct {
 
 // InMemoryServer is an auth server that stores all its data in memory (without persistence).
 // It uses maps to provide quick access with both IDs and names as key.
+// TODO: use a mutex to protect internal data structures when operating multi-threaded.
 type InMemoryServer struct {
 	cfg InMemoryServerConfig
 
@@ -26,6 +27,12 @@ type InMemoryServer struct {
 	// Auto-increment numerical IDs
 	nextUser UserID
 	nextRole RoleID
+
+	// For removing expired tokens
+	tokenQ []TokenQueue
+
+	// For calculating server epoch
+	startedOn time.Time
 }
 
 var (
@@ -249,6 +256,7 @@ func (s *InMemoryServer) newToken(u *User) (*Token, error) {
 		User:    u.ID,
 		Expires: now.Add(time.Duration(s.cfg.TokenExpireSec) * time.Second),
 	}
+	s.addToTokenQueue(&t)
 	return &t, nil
 }
 
@@ -275,7 +283,42 @@ func (s *InMemoryServer) verifyToken(t TokenValue) (*User, error) {
 
 // pruneTokens remove expired tokens from memory.
 // It is triggered roughly once per hour. TODO: support configuring this interval
-// Returns the number of tokens removed in this operation.
-func (s *InMemoryServer) pruneTokens() int {
-	//
+func (s *InMemoryServer) pruneTokens() {
+	var (
+		i      int
+		ep     = s.currentEpochInHour()
+		expire = s.cfg.TokenExpireSec/3600 + 1
+	)
+	for i = 0; i < len(s.tokenQ); i++ {
+		if ep-s.tokenQ[i].ServerEpoch <= expire {
+			break
+		}
+		for _, token := range s.tokenQ[i].Tokens {
+			delete(s.tokens, token.Value)
+		}
+	}
+	// Avoid slice leak
+	tmpTokenQueue := make([]TokenQueue, len(s.tokenQ)-i)
+	copy(tmpTokenQueue, s.tokenQ[i:])
+	s.tokenQ = tmpTokenQueue
+}
+
+// addToTokenQueue saves a reference to a token for later pruning.
+func (s *InMemoryServer) addToTokenQueue(t *Token) {
+	ep := s.currentEpochInHour()
+	if l := len(s.tokenQ); l == 0 || s.tokenQ[l-1].ServerEpoch < ep {
+		s.tokenQ = append(s.tokenQ, TokenQueue{
+			ServerEpoch: ep,
+		})
+		s.pruneTokens()
+	}
+	l := len(s.tokenQ)
+	s.tokenQ[l-1].Tokens = append(s.tokenQ[l-1].Tokens, t)
+}
+
+// currentEpochInHour gets the number of hours, starting from 1, since the server started.
+func (s *InMemoryServer) currentEpochInHour() int32 {
+	now := time.Now()
+	elapsed := now.Sub(s.startedOn)
+	return int32(elapsed.Seconds()+1) / 3600
 }
