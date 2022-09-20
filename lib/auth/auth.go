@@ -61,6 +61,8 @@ func NewInMemoryServer(config *InMemoryServerConfig) (*InMemoryServer, error) {
 		tokens:   make(map[TokenValue]*Token),
 		nextUser: 1,
 		nextRole: 1,
+
+		startedOn: time.Now(),
 	}
 	return &svr, nil
 }
@@ -70,16 +72,20 @@ func NewInMemoryServer(config *InMemoryServerConfig) (*InMemoryServer, error) {
 // CreateUser adds a new user with given credentials.
 //
 // Returns: the ID of the new user
-// Errors: ErrUserExists
+// Errors: ErrWeakPassword, ErrUserExists
 func (s *InMemoryServer) CreateUser(name, password string) (UserID, error) {
 	if _, exists := s.uname[name]; exists {
 		return 0, ErrUserExists
+	}
+	if len(password) < 6 {
+		return 0, ErrWeakPassword
 	}
 
 	newUser := User{
 		ID:     s.nextUser,
 		Name:   name,
 		Secret: getPasswordHash(password),
+		Roles:  make(map[RoleID]*Role),
 	}
 	s.users[s.nextUser] = &newUser
 	s.uname[name] = &newUser
@@ -190,12 +196,17 @@ func (s *InMemoryServer) Invalidate(token TokenValue) {
 // CheckRole checks if the user identified by the token has the given role.
 //
 // Returns: true or false
-// Errors: ErrInvalidToken
+// Errors: ErrRoleNotExist, ErrInvalidToken
 func (s *InMemoryServer) CheckRole(token TokenValue, role RoleID) (bool, error) {
 	userObj, err := s.verifyToken(token)
 	if err != nil {
 		return false, err
 	}
+
+	if _, ok := s.roles[role]; !ok {
+		return false, ErrRoleNotExist
+	}
+
 	_, belongs := userObj.Roles[role]
 	return belongs, nil
 }
@@ -320,5 +331,5 @@ func (s *InMemoryServer) addToTokenQueue(t *Token) {
 func (s *InMemoryServer) currentEpochInHour() int32 {
 	now := time.Now()
 	elapsed := now.Sub(s.startedOn)
-	return int32(elapsed.Seconds()+1) / 3600
+	return int32(elapsed.Seconds())/3600 + 1
 }

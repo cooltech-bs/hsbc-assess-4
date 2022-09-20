@@ -15,6 +15,7 @@ type User struct {
 }
 
 var (
+	ErrWeakPassword = errors.New("password does not match requirements")
 	ErrUserExists   = errors.New("user already exists")
 	ErrUserNotExist = errors.New("user does not exist")
 	ErrInvalidAuth  = errors.New("authentication failed")
